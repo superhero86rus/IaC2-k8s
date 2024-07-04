@@ -344,3 +344,71 @@ time ansible-playbook -i inventory/mycluster/hosts.yaml cluster.yml
 # После разворачивани кластера, проверяем ноды
 kubectl get nodes -o wide
 ```
+
+### k8s день 2
+
+```bash
+# Изучаекм объекты и команды k8s
+kubectl get all
+# Кубернетес автоматически останавливает образы, в которых отсутствуют процессы
+kubectl run my-debian --image=debian -- "sleep" "3600"
+kubectl get all
+
+# Подключаемся к поду
+kubectl exec -it my-debian exec -- bash
+> apt update
+> apt install iproute2
+> ip a
+
+# Удаление пода
+kubectl delete pod my-debian
+
+# Создание deployment (ReplicaSet просят больше не создавать руками, а делать сразу deployment, который создаст сам replicaset)
+kubectl create deployment my-debian --image=debian -- "sleep" "3600"
+```
+
+### Весь k8s задекларирован с помощью манифестов и мы можем это посмотреть
+```bash
+kubectl get deployment my-debian -o yaml
+
+# Установим nano как редактор по умолчанию
+# Нужно раскомментировать строку в .bashrc
+#export EDITOR=nano
+kubectl edit deployment my-debian
+# Можно увеличить кол-во реплик и изменения прмиенятся моментально
+
+kubectl delete deployment my-debian
+
+# Создаем манифест репликасета
+nano my-debian-deployment.yaml
+```
+```yaml
+apiVersion: apps/v1
+kind: ReplicaSet
+#kind: Deployment
+metadata:
+  name: my-debian
+spec:
+  selector:
+    matchLabels:
+      app: my-debian
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: my-debian
+    spec:
+      containers:
+      - name: my-debian
+        image: debian
+        command: ["/bin/sh"]
+        args: ["-c", "while true; do echo hello; sleep 3;done"]
+      restartPolicy: Always
+```
+
+```bash
+# Применяем манифест деплоймента для репликасета
+kubectl apply -f my-debian-deployment.yaml
+# Удаляем
+kubectl delete -f my-debian-deployment.yaml
+```
