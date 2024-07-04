@@ -326,3 +326,21 @@ ssh-copy-id kube2
 ssh-copy-id kube3
 ssh-copy-id kube4
 ```
+### Развертывание через Kubespray
+```bash
+apt update
+apt install python3-pip -y
+git clone https://github.com/kubernetes-sigs/kubespray
+cd kubespray
+time pip3 install -r requirements.txt
+cp -rfp inventory/sample inventory/mycluster
+
+# Создание инвентарного файла
+pip install ruamel_yaml
+declare -a IPS=(kube1,192.168.18.221 kube2,192.168.18.222 kube3,192.168.18.223)
+CONFIG_FILE=inventory/mycluster/hosts.yaml python3 contrib/inventory_builder/inventory.py ${IPS[@]}
+
+time ansible-playbook -i inventory/mycluster/hosts.yaml cluster.yml
+# После разворачивани кластера, проверяем ноды
+kubectl get nodes -o wide
+```
