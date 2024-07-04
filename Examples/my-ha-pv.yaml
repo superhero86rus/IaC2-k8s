@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv-node2-sz-128m-num-001
+  labels:
+    type: local
+spec:
+  storageClassName: my-ha-sc
+  capacity:
+    storage: 128Mi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: /disk2
+  persistentVolumeReclaimPolicy: Retain
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node2
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv-node2-sz-64m-num-002
+  labels:
+    type: local
+spec:
+  storageClassName: my-ha-sc
+  capacity:
+    storage: 64Mi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: /disk2
+  persistentVolumeReclaimPolicy: Retain
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node2

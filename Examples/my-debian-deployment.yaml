@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+#kind: Deployment
+metadata:
+  name: my-debian
+spec:
+  selector:
+    matchLabels:
+      app: my-debian
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: my-debian
+    spec:
+      containers:
+      - name: my-debian
+        image: debian
+        command: ["/bin/sh"]
+        args: ["-c", "while true; do echo hello; sleep 3;done"]
+
+        volumeMounts:
+          - name: my-disk2-volume
+            mountPath: /data
+
+      volumes:
+        - name: my-disk2-volume
+          hostPath:
+            path: /disk2/
+      nodeSelector:
+        disk2: "yes"
+        
+      restartPolicy: Always

@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+#kind: Deployment
+metadata:
+  name: my-debian
+spec:
+  selector:
+    matchLabels:
+      app: my-debian
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: my-debian
+    spec:
+      containers:
+      - name: my-debian
+        image: debian
+        command: ["/bin/sh"]
+        args: ["-c", "while true; do echo hello; sleep 3;done"]
+
+        volumeMounts:
+          - name: data
+            mountPath: /data
+
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: my-ha-pvc-sz64m
+
+      restartPolicy: Always

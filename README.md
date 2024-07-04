@@ -1,6 +1,9 @@
 # IaC2-k8s
 Курс "DevOps. Уровень 2. Использование Kubernetes". УЦ "Специалист" 03-05.07.2024
 
+### Полезная статья преподавателя - самый простой пример CI/CI
+https://habr.com/ru/articles/716454/
+
 ### k8s день 1
 
 ```txt
@@ -411,4 +414,107 @@ spec:
 kubectl apply -f my-debian-deployment.yaml
 # Удаляем
 kubectl delete -f my-debian-deployment.yaml
+```
+
+#### Метки
+```bash
+kubectl get nodes --show-labels
+kubectl label nodes node2 disk2=yes
+```
+
+### Volumes
+```bash
+ssh node2 mkdir /disk2
+ssh node2 touch /disk2/disk2_node2
+nano my-debian-deployment.yaml
+
+# Добавляем
+volumeMounts:
+          - name: my-disk2-volume
+            mountPath: /data
+
+volumes:
+        - name: my-disk2-volume
+          hostPath:
+            path: /disk2/
+      nodeSelector:
+        disk2: "yes"
+
+kubectl apply -f my-debian-deployment.yaml
+
+nano my-ha-pv.yaml
+# Добавляем Persisten Volume
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv-node2-sz-128m-num-001
+  labels:
+    type: local
+spec:
+  storageClassName: my-ha-sc
+  capacity:
+    storage: 128Mi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: /disk2
+  persistentVolumeReclaimPolicy: Retain
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node2
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv-node2-sz-64m-num-002
+  labels:
+    type: local
+spec:
+  storageClassName: my-ha-sc
+  capacity:
+    storage: 64Mi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: /disk2
+  persistentVolumeReclaimPolicy: Retain
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node2
+
+# В отличие от простых томов, к томам Persistent Volume поды не подключаются автоматически
+# Поды подключаются через запрос PV Claim
+kubectl apply -f my-ha-pv.yaml
+
+nano my-ha-pvc.yaml
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-ha-pvc-sz64m
+spec:
+  storageClassName: my-ha-sc
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 64Mi
+
+kubectl apply -f my-ha-pvc.yaml
+kubectl get persistentvolume
+
+# Создадим файл сиинтетически, размером больше чем том
+kubectl exec -it pods/my-debian-lskkw -- bash
+dd if=/dev/zero of=/data/filedisk bs=1M count=100
+ls -lh /data/
 ```
