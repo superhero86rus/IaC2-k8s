@@ -518,3 +518,86 @@ kubectl exec -it pods/my-debian-lskkw -- bash
 dd if=/dev/zero of=/data/filedisk bs=1M count=100
 ls -lh /data/
 ```
+
+### Как подключиться по SSH к поду k8s
+```bash
+
+# Создаем конфиг
+nano sshd_config
+
+PermitRootLogin yes
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+UsePAM no
+
+kubectl create configmap ssh-config --from-file=sshd_config --dry-run=client -o yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ssh-config
+data:
+  sshd_config: |
+    PermitRootLogin yes
+    PasswordAuthentication no
+    ChallengeResponseAuthentication no
+    UsePAM no
+  authorized_keys: |
+    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCkaacIUANGOcJoXXoX034GuY6Ci1E/iXZnRgR6Lu2SnbZGiGSBfucBONYYScvtwb2cpLkQHXc5ouA1Z25nDbj3r4+AP/LQCbYlvDo96vor29rXu/5SmoacRs+oumIhrQUGv/cQRGDqZzNiK05jnMVySAcVt+Bgw9xwl8SDg8wqGqMfJwl7ZEqEv7lHr93f+EBjSoisTjmOLg0M2AatKKcbN2kXUByIi+TfF4F097zXnrfEjyPsC4yMYXyag4B7McaQgL2Xy2/jUZMZe/tn1RY7AIPoiONN3/qVE64gYlaIouWJEHlycIhZQCxmk95JA1crg9KuD5E8YWpvTlXimj9ydQdNVa5G4XqTQ/sA+kWqCp8EPwKwVxXLKW/1vgYX5U8QmsuNpwYWi7dkifS4SeYmM6ilLvoNsyyvIgsN2EHAHGJTflR/zIO5nGBYDUsEedwXhuxtks4XcZAV0XQhBVl3/NwcXCcExkumfyxB6pRwaTSYDNl+ACzpQiNVH9EjT+s= root@server.corp18.un
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: my-openssh-server
+spec:
+  selector:
+    matchLabels:
+      app: my-openssh-server
+  template:
+    metadata:
+      labels:
+        app: my-openssh-server
+    spec:
+      containers:
+      - name: my-openssh-server
+        image: linuxserver/openssh-server
+        command: ["/bin/sh"]
+        args: ["-c", "/usr/bin/ssh-keygen -A; usermod -p '*' root; /usr/sbin/sshd.pam -D"]
+        ports:
+        - containerPort: 22
+        volumeMounts:
+        - name: ssh-volume
+          subPath: sshd_config
+          mountPath: /etc/ssh/sshd_config
+        - name: ssh-volume
+          subPath: authorized_keys
+          mountPath: /root/.ssh/authorized_keys
+      volumes:
+      - name: ssh-volume
+        configMap:
+          name: ssh-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-openssh-server
+spec:
+  type: NodePort
+  ports:
+  - port: 22
+    nodePort: 32222
+  selector:
+    app: my-openssh-server
+
+# Создаем файл my-openssh-server-deployment.yaml, куда прокидываем ключ сервера и configMap созданный команной выше
+# Применяем его
+kubectl apply -f my-openssh-server-deployment.yaml
+# configmap/ssh-config created
+# replicaset.apps/my-openssh-server created
+# service/my-openssh-server created
+
+iptables-save | grep 32222
+# Теперь подключаясь к порту 32222 пода, мы будем попадать на 22 порт сервиса my-openssh-service
+# Можно подключиться с сервера
+ssh -p 32222 node2
+```
