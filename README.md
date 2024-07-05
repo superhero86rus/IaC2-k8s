@@ -824,4 +824,117 @@ git add . -v # скрытые файлы учитывать
 git commit -m "Upgrate to ver1.2"
 git tag ver1.2
 git push ver1.2
+
+# Переносим конфигурацию insecure registry в GitLab
+# удаляем на gate
+rm /etc/docker/daemon.json
+docker stop gitlab-runner
+docker rm gitlab-runner
+rm /srv/gitlab-runner/config/config.toml
+
+# Удалить все, включая volume
+docker system prune -a --volumes
+
+docker run -d --name gitlab-runner --restart always \
+  -v /srv/gitlab-runner/config:/etc/gitlab-runner \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  gitlab/gitlab-runner:latest
+
+# Docker in Docker
+docker run --rm -v /srv/gitlab-runner/config:/etc/gitlab-runner gitlab/gitlab-runner register \
+  --non-interactive \
+  --url "http://server.corp18.un/" \
+  --registration-token "GR1348941dZtdxS8wHKKdz-xUTAWH" \
+  --executor "docker" \
+  --docker-image "docker:stable" \
+  --docker-privileged \
+  --description "dind-runner"
+
+# Обновляем пайплайн для DinD
+```
+```yaml
+stages:
+  - build
+  - push
+#  - deploy
+
+variables:
+  DOCKER_TLS_CERTDIR: ""
+
+services:
+  - name: docker:dind
+    command:
+      [
+        '--insecure-registry=server.corp18.un:5000',
+      ]
+
+before_script:
+  - env
+  - docker info
+  - echo -n $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+
+Build:
+  stage: build
+#  image:
+#    name: gcr.io/kaniko-project/executor:v1.9.0-debug
+#    entrypoint: [""]
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:latest || true
+    - >
+      docker build
+      --pull
+      --cache-from $CI_REGISTRY_IMAGE:latest
+      --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+      .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+
+#    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"},\"$CI_DEPENDENCY_PROXY_SERVER\":{\"auth\":\"$(printf "%s:%s" ${CI_DEPENDENCY_PROXY_USER} "${CI_DEPENDENCY_PROXY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+#    - /kaniko/executor
+#      --insecure --skip-tls-verify
+#      --context "${CI_PROJECT_DIR}"
+#      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+#      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}"
+
+Push latest:
+#  image:
+#    name: gcr.io/go-containerregistry/crane:debug
+#    entrypoint: [""]
+  variables:
+    GIT_STRATEGY: none
+  stage: push
+  only:
+    - main
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:latest
+    - docker push $CI_REGISTRY_IMAGE:latest
+
+#    - crane auth login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+#    - crane --insecure cp $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:latest
+
+Push tag:
+#  image:
+#    name: gcr.io/go-containerregistry/crane:debug
+#    entrypoint: [""]
+  variables:
+    GIT_STRATEGY: none
+  stage: push
+  only:
+    - tags
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+
+#   - crane auth login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+#   - crane --insecure cp $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+
+#Deploy:
+#  variables:
+#    VER: "$CI_COMMIT_REF_NAME"
+#  stage: deploy
+#  only:
+#    - tags
+#  trigger:
+#    project: student/gowebd-k8s
 ```
