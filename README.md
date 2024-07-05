@@ -601,3 +601,104 @@ iptables-save | grep 32222
 # Можно подключиться с сервера
 ssh -p 32222 node2
 ```
+
+### Установка GOlang
+```bash
+apt install golang-go
+mkdir gowebd
+cd gowebd
+nano main.go
+```
+```go
+package main
+
+import (
+        "fmt"
+        "log"
+        "net/http"
+        "os"
+)
+
+const ver = "ver1.1"
+
+func main() {
+        http.HandleFunc("/", HelloServer)
+        fmt.Printf("Starting server at port 80\n")
+        if err := http.ListenAndServe(":80", nil); err != nil {
+                log.Fatal(err)
+        }
+}
+
+func HelloServer(w http.ResponseWriter, r *http.Request) {
+        name, err := os.Hostname()
+        if err != nil {
+                panic(err)
+        }
+        fmt.Fprint(w, "Hello world from " + name + " " + ver + "\n")
+}
+```
+```bash
+# runtime запуск
+sudo go run main.go
+
+# сборка двоичного файла
+sudo go build -o /usr/local/sbin/gowebd
+# Запуск
+sudo /usr/local/sbin/gowebd
+
+# Ставим docker
+apt install docker.io
+usermod -aG docker student
+su - student
+# student/password
+
+# Создаем Dockerfile
+```
+```Dockerfile
+FROM golang
+#FROM golang as builder
+
+WORKDIR /build
+COPY . .
+RUN test -e go.mod || go mod init gowebd
+
+#ENV CGO_ENABLED=0
+RUN go build -o /gowebd
+
+#FROM alpine
+#COPY --from=builder /gowebd /gowebd
+
+ENTRYPOINT ["/gowebd"]
+```
+
+```bash
+# Сборка
+time docker build -t gowebd .
+0
+# Однако, это создаст образ размером под 800мб
+# Выход - Multistage Building
+```
+```Dockerfile
+# Из образа голанг создаем билдер
+FROM golang as builder
+
+ARG CGO_ENABLED=0
+ARG GOOS=linux
+
+# Внутри билдера собирается приложение
+WORKDIR /build
+COPY . .
+RUN test -e go.mod || go mod init gowebd
+
+# Удаляем отладочную информацию из бинарника
+RUN go build -ldflags "-s -w" -o /gowebd 
+
+# А потом берем образ Alpine и собранное приложение в билдере копируем в этот образ
+FROM alpine
+COPY --from=builder /gowebd /gowebd
+
+ENTRYPOINT ["/gowebd"]
+```bash
+time docker build --progress=plain --no-cache -t gowebd .
+
+```
