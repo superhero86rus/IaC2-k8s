@@ -7,7 +7,7 @@ import (
         "os"
 )
 
-const ver = "ver1.1"
+const ver = "ver1.2"
 
 func main() {
         http.HandleFunc("/", HelloServer)

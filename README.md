@@ -1,5 +1,6 @@
 # IaC2-k8s
 Курс "DevOps. Уровень 2. Использование Kubernetes". УЦ "Специалист" 03-05.07.2024
+val@bmstu.ru
 
 ### Полезная статья преподавателя - самый простой пример CI/CI
 https://habr.com/ru/articles/716454/
@@ -700,5 +701,127 @@ COPY --from=builder /gowebd /gowebd
 ENTRYPOINT ["/gowebd"]
 ```bash
 time docker build --progress=plain --no-cache -t gowebd .
+```
 
+### Кто слушает порт?
+```bash
+ss -tupan | grep 22
+```
+
+### Работаем с GitLab
+```bash
+# По умолчанию, Gitlab из контейнера работает во вне на порту 2222, нужно сконфигурировать SSH
+nano ./ssh/config
+
+# Вставляем туда
+Host server* 
+        Port 2222
+
+# GitLab docker registry
+# Превращаем GitLab (запущенный в docker) в хранилище docker репозиториев
+nano /etc/gitlab/gitlab.rb
+
+# Прописываем
+registry_external_url 'http://server.corp18.un'
+gitlab_rails['registry_enabled'] = true
+gitlab_rails['registry_host'] = "server.corp18.un"
+gitlab_rails['registry_port'] = "5000"
+registry['registry_http_addr'] = "server.corp18.un:5000"
+
+# Далее
+docker exec -it root_web_1 bash
+time gitlab-ctl reconfigure
+
+# Настраиваем связку с docker registry (на компьютере разработчика client1 и gate)
+nano /etc/docker/daemon.json
+
+{
+  "insecure-registries" : ["server.corp18.un:5000"]
+}
+
+service docker restart
+
+# логинимся под student
+# GitLab -> Deploy -> Container Registry
+docker login server.corp18.un:5000 # student/Pa$$w0rd
+#docker build -t server.corp18.un:5000/student/gowebd .
+
+docker tag gowebd server.corp18.un:5000/student/gowebd
+docker push server.corp18.un:5000/student/gowebd
+# Проверили добавление образа и удаляем его, поскольку будет собирать в гитлабе
+
+# Теперь нужно создать персональный gitlab-runner под проект (на gate)
+# registration-token берем из GitLab -> Settings -> CI/CD -> Runners и нажимаем на три точки рядом с New Project Runner
+# Копируем токен
+docker run --rm -v /srv/gitlab-runner/config:/etc/gitlab-runner gitlab/gitlab-runner register \
+  --non-interactive \
+  --url "http://server.corp18.un/" \
+  --registration-token "GR1348941dZtdxS8wHKKdz-xUTAWH" \
+  --executor "docker" \
+  --docker-image "docker:stable" \
+  --docker-privileged \
+  --description "gowebd-runner"
+
+# На клиенте создаем файл для пайплайна
+nano gowebd/.gitlab-ci.yml
+```
+```yaml
+stages:
+  - build
+  - push
+
+variables:
+  DOCKER_TLS_CERTDIR: ""
+
+services:
+  - name: docker:dind
+    command:
+      [
+        '--insecure-registry=server.corp18.un:5000',
+      ]
+
+before_script:
+  - env
+  - echo -n $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+
+Build:
+  stage: build
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:latest || true
+    - >
+      docker build
+      --pull
+      --cache-from $CI_REGISTRY_IMAGE:latest
+      --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+      .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+
+Push latest:
+  variables:
+    GIT_STRATEGY: none
+  stage: push
+  only:
+    - main
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:latest
+    - docker push $CI_REGISTRY_IMAGE:latest
+
+Push tag:
+  variables:
+    GIT_STRATEGY: none
+  stage: push
+  only:
+    - tags
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+```
+```bash
+nano main.go # меняем версию
+git add . -v # скрытые файлы учитывать
+git commit -m "Upgrate to ver1.2"
+git tag ver1.2
+git push ver1.2
 ```
