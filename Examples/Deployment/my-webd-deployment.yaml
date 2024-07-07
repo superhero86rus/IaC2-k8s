@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-webd
+spec:
+  selector:
+    matchLabels:
+      app: my-webd
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: my-webd
+    spec:
+      containers:
+      - name: my-webd
+        image: server.corp18.un:5000/student/gowebd:ver1.2

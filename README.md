@@ -938,3 +938,98 @@ Push tag:
 #  trigger:
 #    project: student/gowebd-k8s
 ```
+
+### Модуль 5
+```bash
+# Создаем пространство имен
+kubectl create namespace my-ns
+kubectl get namespaces
+nano my-webd-deployment.yaml
+```
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-webd
+spec:
+  selector:
+    matchLabels:
+      app: my-webd
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: my-webd
+    spec:
+      containers:
+      - name: my-webd
+        image: server.corp18.un:5000/student/gowebd:ver1.2
+```
+```bash
+kubectl apply -f my-webd-deployment.yaml -n my-ns
+kubectl get all -o wide -n my-ns
+
+# Отладка
+kubectl describe pod/my-webd-59ccf67f7b-hv6t7 -n my-ns
+```
+
+### Среда выполнения контейнеров в k8s - containerd
+```bash
+mkdir /etc/containerd/
+nano /etc/containerd/config.toml
+```
+```ini
+version = 2
+
+[plugins."io.containerd.grpc.v1.cri".registry]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."server.corp18.un:5000"]
+      endpoint = ["http://server.corp18.un:5000"]
+
+[plugins."io.containerd.grpc.v1.cri".registry.configs]
+  [plugins."io.containerd.grpc.v1.cri".registry.configs."server.corp18.un:5000".tls]
+    insecure_skip_verify = true
+```
+```bash
+### Переносим все на ноды
+bash -c '
+ssh node2 mkdir /etc/containerd/
+ssh node3 mkdir /etc/containerd/
+scp /etc/containerd/config.toml node2:/etc/containerd/config.toml
+scp /etc/containerd/config.toml node3:/etc/containerd/config.toml
+systemctl restart containerd
+ssh node2 systemctl restart containerd
+ssh node3 systemctl restart containerd
+'
+
+# Добавление insecure_registries через Kubespray
+# Переходим на kube1
+nano inventory/mycluster/group_vars/all/containerd.yml
+
+# Вставляем в любое место
+containerd_insecure_registries:
+  "server.corp18.un:5000": "http://server.corp18.un:5000"
+
+# Заново запускаем playbook Kubespray
+time ansible-playbook -i inventory/mycluster/hosts.yaml cluster.yml
+```
+```bash
+# Возвращаемся на node и создаем сервис
+nano my-webd-service.yaml
+```
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-webd
+spec:
+  selector:
+    app: my-webd
+  ports:
+  - protocol: TCP
+    port: 80
+```
+```bash
+kubectl apply -f my-webd-service.yaml -n my-ns
+kubectl get svc my-webd -n my-ns
+```
